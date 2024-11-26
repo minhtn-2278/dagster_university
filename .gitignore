@@ -1,0 +1,5 @@
+.env
+dagster_university.egg-info/
+.devcontainer
+data/raw
+data/staging

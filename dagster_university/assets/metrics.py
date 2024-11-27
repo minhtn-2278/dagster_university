@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import os
 from dagster import asset
+from dagster_duckdb import DuckDBResource
 import duckdb
 
 import pandas as pd
@@ -14,7 +15,7 @@ from . import constants
 @asset(
     deps=["taxi_trips", "taxi_zones"]
 )
-def manhattan_stats() -> None:
+def manhattan_stats(database: DuckDBResource) -> None:
     query = """
         select
             zones.zone,
@@ -27,8 +28,8 @@ def manhattan_stats() -> None:
         group by zone, borough, geometry
     """
 
-    conn = duckdb.connect(os.getenv("DUCKDB_DATABASE"))
-    trips_by_zone = conn.execute(query).fetch_df()
+    with database.get_connection() as conn:
+        trips_by_zone = conn.execute(query).fetch_df()
 
     trips_by_zone["geometry"] = gpd.GeoSeries.from_wkt(trips_by_zone["geometry"])
     trips_by_zone = gpd.GeoDataFrame(trips_by_zone)
@@ -62,7 +63,7 @@ def manhattan_map() -> None:
 @asset(
     deps=["taxi_trips"]
 )
-def trips_by_week_practice() -> None:
+def trips_by_week_practice(database: DuckDBResource) -> None:
     query = f"""
         copy (
             select distinct
@@ -72,22 +73,20 @@ def trips_by_week_practice() -> None:
                 end as period,
                 count(*) over(partition by yearweek(pickup_datetime)) as num_trips,
                 sum(passenger_count) over(partition by yearweek(pickup_datetime)) as passenger_count,
-                sum(total_amount) over(partition by yearweek(pickup_datetime)) as total_amount,
-                sum(trip_distance) over(partition by yearweek(pickup_datetime)) as trip_distance
+                cast(sum(total_amount) over(partition by yearweek(pickup_datetime)) as decimal(15, 2)) as total_amount,
+                cast(sum(trip_distance) over(partition by yearweek(pickup_datetime)) as decimal(15, 2)) as trip_distance
             from trips
             order by yearweek(pickup_datetime) desc
         ) to '{constants.TRIPS_BY_WEEK_FILE_PATH}' (HEADER, DELIMITER ',')
     """
 
-    conn = duckdb.connect(os.getenv("DUCKDB_DATABASE"))
-    conn.execute(query)
+    with database.get_connection() as conn:
+        conn.execute(query)
 
 @asset(
     deps=["taxi_trips"]
 )
-def trips_by_week_answer() -> None:
-    conn = duckdb.connect(os.getenv("DUCKDB_DATABASE"))
-
+def trips_by_week_answer(database: DuckDBResource) -> None:
     current_date = datetime.strptime("2023-03-01", constants.DATE_FORMAT)
     end_date = datetime.strptime("2023-04-01", constants.DATE_FORMAT)
 
@@ -102,7 +101,8 @@ def trips_by_week_answer() -> None:
             where date_trunc('week', pickup_datetime) = date_trunc('week', '{current_date_str}'::date)
         """
 
-        data_for_week = conn.execute(query).fetch_df()
+        with database.get_connection() as conn:
+            data_for_week = conn.execute(query).fetch_df()
 
         aggregate = data_for_week.agg({
             "vendor_id": "count",

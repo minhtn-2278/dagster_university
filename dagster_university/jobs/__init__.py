@@ -10,5 +10,12 @@ trip_update_job = define_asset_job(
 weekly_update_job = define_asset_job(
     name="weekly_update_job",
     partitions_def=weekly_partition,
-    selection=AssetSelection.assets("trips_by_week_answer", "trips_by_week_practice"),
+    selection=AssetSelection.assets("trips_by_week_answer"),
+)
+
+adhoc_request = AssetSelection.assets(["adhoc_request"])
+
+adhoc_request_job = define_asset_job(
+    name="adhoc_request_job",
+    selection=adhoc_request,
 )
